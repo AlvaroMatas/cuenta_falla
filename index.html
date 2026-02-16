@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cuentas de la Falla - Nitales</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0f0f0f; color: #e5e7eb; font-family: ui-sans-serif, system-ui; -webkit-tap-highlight-color: transparent; }
+        .card { background: #1a1a1a; border-radius: 12px; border: 1px solid #333; }
+        .tab-active { border-bottom: 3px solid #ef4444; color: #ef4444; font-weight: bold; }
+        
+        /* Optimización de Checkboxes para móvil */
+        input[type="checkbox"] { 
+            width: 24px; height: 24px; 
+            accent-color: #22c55e; 
+            cursor: pointer;
+            border-radius: 6px;
+        }
+
+        .paid-bg { background-color: #064e3b !important; }
+        
+        /* Tabla responsive con scroll suave */
+        .table-container {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 8px;
+            scrollbar-width: none; /* Firefox */
+        }
+        .table-container::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+        /* Columna de nombres fija */
+        .sticky-col {
+            position: sticky;
+            left: 0;
+            background: #1a1a1a;
+            z-index: 20;
+            border-right: 2px solid #333;
+            min-width: 100px;
+        }
+
+        /* Botones táctiles */
+        .touch-btn {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const MESES = ["Sep", "Oct", "Nov", "Dic", "Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+        const NOMBRES_INICIALES = [
+            "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi", 
+            "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos", 
+            "Pere", "Hada", "Diana", "Lucia", "Sergio"
+        ];
+        
+        const ADMIN_PASSWORD = "Admin123";
+
+        function App() {
+            const [role, setRole] = useState(() => sessionStorage.getItem('falla_role') || null);
+            const [passInput, setPassInput] = useState("");
+            const [view, setView] = useState('cuotas');
+            
+            const [falleros, setFalleros] = useState(() => {
+                const saved = localStorage.getItem('falla_v2_falleros');
+                return saved ? JSON.parse(saved) : NOMBRES_INICIALES.map((n, i) => ({
+                    id: i, nombre: n, pagos: Array(10).fill(false)
+                }));
+            });
+
+            const [contabilidadMensual, setContabilidadMensual] = useState(() => {
+                const saved = localStorage.getItem('falla_v2_conta');
+                return saved ? JSON.parse(saved) : MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
+            });
+
+            const [efectivo, setEfectivo] = useState(() => Number(localStorage.getItem('falla_v2_efectivo')) || 196.06);
+            const [tarjeta, setTarjeta] = useState(() => Number(localStorage.getItem('falla_v2_tarjeta')) || 0.21);
+
+            useEffect(() => {
+                localStorage.setItem('falla_v2_falleros', JSON.stringify(falleros));
+                localStorage.setItem('falla_v2_conta', JSON.stringify(contabilidadMensual));
+                localStorage.setItem('falla_v2_efectivo', efectivo);
+                localStorage.setItem('falla_v2_tarjeta', tarjeta);
+            }, [falleros, contabilidadMensual, efectivo, tarjeta]);
+
+            const getCuota = (mesNombre) => (mesNombre === "Feb" ? 10 : 5);
+
+            const totalCuotas = falleros.reduce((acc, f) => {
+                return acc + f.pagos.reduce((accP, pagado, idx) => accP + (pagado ? getCuota(MESES[idx]) : 0), 0);
+            }, 0);
+
+            const totalGastos = contabilidadMensual.reduce((acc, m) => acc + m.gasto, 0);
+            const totalIngresosExtra = contabilidadMensual.reduce((acc, m) => acc + m.ingresoExtra, 0);
+            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos;
+
+            const handleLogin = (selectedRole) => {
+                if (selectedRole === 'admin') {
+                    if (passInput === ADMIN_PASSWORD) {
+                        setRole('admin');
+                        sessionStorage.setItem('falla_role', 'admin');
+                    } else {
+                        alert("Contraseña incorrecta");
+                    }
+                } else {
+                    setRole('user');
+                    sessionStorage.setItem('falla_role', 'user');
+                }
+            };
+
+            const handleLogout = () => {
+                setRole(null);
+                sessionStorage.removeItem('falla_role');
+                setPassInput("");
+            };
+
+            const handleTogglePago = (fId, mIdx) => {
+                if (role !== 'admin') return;
+                setFalleros(falleros.map(f => f.id === fId ? 
+                    {...f, pagos: f.pagos.map((p, i) => i === mIdx ? !p : p)} : f
+                ));
+            };
+
+            if (!role) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="card p-6 w-full max-w-md text-center shadow-2xl border-red-900">
+                            <i className="fas fa-fire-alt text-5xl text-red-600 mb-4"></i>
+                            <h2 className="text-xl font-bold mb-6 uppercase tracking-widest">Falla 2026</h2>
+                            
+                            <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">
+                                ENTRAR CONSULTA
+                            </button>
+                            
+                            <div className="mt-4 pt-6 border-t border-neutral-800">
+                                <input 
+                                    type="password" 
+                                    placeholder="Pin Admin"
+                                    className="w-full bg-black border border-neutral-700 p-3 rounded-xl mb-3 text-center outline-none focus:border-red-600"
+                                    value={passInput}
+                                    onChange={(e) => setPassInput(e.target.value)}
+                                />
+                                <button onClick={() => handleLogin('admin')} className="w-full bg-red-700 touch-btn rounded-xl font-bold uppercase text-sm">
+                                    ADMINISTRADOR
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-6xl mx-auto p-3 sm:p-6">
+                    {/* Header Adaptable */}
+                    <header className="mb-4 bg-gradient-to-br from-red-900 to-black p-5 rounded-2xl border border-red-800 relative">
+                        <button onClick={handleLogout} className="absolute top-3 right-3 text-gray-400 text-sm p-2">
+                            <i className="fas fa-sign-out-alt"></i>
+                        </button>
+                        
+                        <div className="flex flex-col gap-4">
+                            <div>
+                                <h1 className="text-xl font-black uppercase">Falla 2026</h1>
+                                {role === 'admin' ? (
+                                    <div className="flex gap-3 text-[10px] mt-1 text-gray-300 font-mono">
+                                        <span className="bg-black/40 px-2 py-0.5 rounded">EF: {efectivo}€</span>
+                                        <span className="bg-black/40 px-2 py-0.5 rounded">TJ: {tarjeta}€</span>
+                                    </div>
+                                ) : (
+                                    <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Solo Lectura</span>
+                                )}
+                            </div>
+
+                            <div className="flex justify-between items-end border-t border-white/10 pt-3">
+                                <div>
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold">Saldo en Caja</p>
+                                    <span className="text-3xl font-mono font-bold">{role === 'admin' ? `${saldoTotal.toFixed(2)}€` : '***€'}</span>
+                                </div>
+                                {role === 'admin' && (
+                                    <button onClick={() => {}} className="bg-green-700 px-3 py-1.5 rounded-lg text-[10px] font-bold">
+                                        EXCEL
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Nav deslizable en móvil */}
+                    <nav className="flex gap-4 mb-4 overflow-x-auto pb-2 border-b border-neutral-800 no-scrollbar">
+                        <button onClick={() => setView('cuotas')} className={`whitespace-nowrap pb-2 text-sm ${view === 'cuotas' ? 'tab-active' : 'text-gray-500'}`}>PAGOS</button>
+                        {role === 'admin' && (
+                            <>
+                                <button onClick={() => setView('meses')} className={`whitespace-nowrap pb-2 text-sm ${view === 'meses' ? 'tab-active' : 'text-gray-500'}`}>CONTABILIDAD</button>
+                                <button onClick={() => setView('config')} className={`pb-2 text-sm ${view === 'config' ? 'tab-active' : 'text-gray-500'}`}><i className="fas fa-cog"></i></button>
+                            </>
+                        )}
+                    </nav>
+
+                    {/* Tabla Optimizada */}
+                    {view === 'cuotas' && (
+                        <div className="card table-container">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-neutral-800">
+                                    <tr>
+                                        <th className="p-3 sticky-col">Nombre</th>
+                                        {MESES.map(m => (
+                                            <th key={m} className="p-3 text-center border-l border-neutral-700">
+                                                {m}<br/><span className="text-[8px] text-yellow-500">{getCuota(m)}€</span>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {falleros.map(f => (
+                                        <tr key={f.id} className="border-b border-neutral-800">
+                                            <td className="p-3 font-bold sticky-col">{f.nombre}</td>
+                                            {f.pagos.map((p, i) => (
+                                                <td key={i} className={`p-3 text-center border-l border-neutral-800 transition-colors ${p ? 'paid-bg' : ''}`}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={p} 
+                                                        onChange={() => handleTogglePago(f.id, i)} 
+                                                        disabled={role !== 'admin'}
+                                                    />
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Vistas Admin adaptadas */}
+                    {view === 'meses' && role === 'admin' && (
+                        <div className="space-y-3">
+                            {contabilidadMensual.map((m, idx) => (
+                                <div key={m.mes} className="card p-4 flex justify-between items-center shadow-lg">
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-red-500 uppercase text-xs">{m.mes}</h4>
+                                        <div className="grid grid-cols-2 gap-2 mt-2">
+                                            <div className="bg-black/30 p-2 rounded-lg">
+                                                <span className="block text-[8px] text-gray-500">INGRESOS</span>
+                                                <input type="number" value={m.ingresoExtra} onChange={(e) => setContabilidadMensual(contabilidadMensual.map((item, i) => i === idx ? {...item, ingresoExtra: Number(e.target.value)} : item))} className="bg-transparent w-full font-mono text-green-500 text-sm outline-none" />
+                                            </div>
+                                            <div className="bg-black/30 p-2 rounded-lg">
+                                                <span className="block text-[8px] text-gray-500">GASTOS</span>
+                                                <input type="number" value={m.gasto} onChange={(e) => setContabilidadMensual(contabilidadMensual.map((item, i) => i === idx ? {...item, gasto: Number(e.target.value)} : item))} className="bg-transparent w-full font-mono text-red-400 text-sm outline-none" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="ml-4 text-right">
+                                        <span className={`text-sm font-mono font-bold ${ (m.ingresoExtra - m.gasto) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                            {(m.ingresoExtra - m.gasto).toFixed(2)}€
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {view === 'config' && role === 'admin' && (
+                        <div className="card p-5 space-y-6">
+                            <h3 className="text-sm font-bold border-b border-neutral-700 pb-2">AJUSTES INICIALES</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] text-gray-500 uppercase block mb-1">Efectivo inicial</label>
+                                    <input type="number" value={efectivo} onChange={(e) => setEfectivo(Number(e.target.value))} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-gray-500 uppercase block mb-1">Tarjeta inicial</label>
+                                    <input type="number" value={tarjeta} onChange={(e) => setTarjeta(Number(e.target.value))} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                </div>
+                                <button onClick={() => { if(confirm('¿Resetear todo?')) { localStorage.clear(); location.reload(); } }} className="w-full bg-red-900/20 text-red-500 p-3 rounded-xl text-xs font-bold uppercase mt-4">
+                                    BORRAR TODOS LOS DATOS
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <footer className="mt-8 text-center text-[10px] text-gray-600 uppercase tracking-tighter pb-10">
+                        © 2026 Gestión Falla - Nitales - Desarrollado por Álvaro Matas 
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
