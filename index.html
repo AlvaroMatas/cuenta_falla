@@ -14,20 +14,22 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-      // 1. CONFIGURACIÓN DE FIREBASE (Sustituye esto con tus datos)
         const firebaseConfig = {
-        apiKey: "AIzaSyCnZQCodEHPtQwZUsYLaxEzXesDBhoVrCM",
-        authDomain: "fallacuenta.firebaseapp.com",
-        projectId: "fallacuenta",
-        storageBucket: "fallacuenta.firebasestorage.app",
-        messagingSenderId: "1015231081604",
-        appId: "1:1015231081604:web:41905c3382df9d6f8a66d1",
-        measurementId: "GG-QEKBQ53F0B"
+            apiKey: "AIzaSyCnZQCodEHPtQwZUsYLaxEzXesDBhoVrCM",
+            authDomain: "fallacuenta.firebaseapp.com",
+            projectId: "fallacuenta",
+            storageBucket: "fallacuenta.firebasestorage.app",
+            messagingSenderId: "1015231081604",
+            appId: "1:1015231081604:web:41905c3382df9d6f8a66d1",
+            measurementId: "GG-QEKBQ53F0B"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-      window.db = db; // Lo hacemos global para usarlo en React
+
+        // EXPORTAMOS TODO A WINDOW PARA QUE REACT LO VEA
+        window.db = db;
+        window.fb = { doc, getDoc, setDoc, onSnapshot };
     </script>
 
     <style>
@@ -39,7 +41,7 @@
         .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; scrollbar-width: none; }
         .sticky-col { position: sticky; left: 0; background: #1a1a1a; z-index: 20; border-right: 2px solid #333; min-width: 100px; }
         .touch-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; }
-        .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .loading-overlay { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
     </style>
 </head>
 <body>
@@ -47,7 +49,6 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const { doc, getDoc, setDoc, onSnapshot } = window.firebaseFirestore || {}; 
 
         const MESES = ["Sep", "Oct", "Nov", "Dic", "Ene", "Feb", "Mar", "Abr", "May", "Jun"];
         const ADMIN_PASSWORD = "Admin123";
@@ -58,29 +59,31 @@
             const [view, setView] = useState('cuotas');
             const [loading, setLoading] = useState(true);
             
-            // Estados de datos
             const [falleros, setFalleros] = useState([]);
             const [contabilidadMensual, setContabilidadMensual] = useState([]);
             const [efectivo, setEfectivo] = useState(0);
             const [tarjeta, setTarjeta] = useState(0);
 
-            // 2. ESCUCHAR CAMBIOS EN TIEMPO REAL DESDE LA NUBE
             useEffect(() => {
-                if (!window.db) return;
+                if (!window.db || !window.fb) return;
 
-                const unsub = onSnapshot(window.firebaseFirestore.doc(window.db, "falla", "globalData"), (docSnap) => {
+                // Usamos las funciones desde window.fb
+                const { onSnapshot, doc } = window.fb;
+                
+                const unsub = onSnapshot(doc(window.db, "falla", "globalData"), (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        setFalleros(data.falleros);
-                        setContabilidadMensual(data.contabilidadMensual);
-                        setEfectivo(data.efectivo);
-                        setTarjeta(data.tarjeta);
+                        setFalleros(data.falleros || []);
+                        setContabilidadMensual(data.contabilidadMensual || []);
+                        setEfectivo(data.efectivo || 0);
+                        setTarjeta(data.tarjeta || 0);
                     } else {
-                        // Datos iniciales si la DB está vacía
-                        console.log("Inicializando base de datos...");
                         initDatabase();
                     }
                     setLoading(false);
+                }, (error) => {
+                    console.error("Error en Firebase:", error);
+                    alert("Error de permisos: Revisa las Reglas de Firestore");
                 });
 
                 return () => unsub();
@@ -103,10 +106,10 @@
                 });
             };
 
-            // 3. FUNCIÓN PARA GUARDAR EN LA NUBE
             const saveData = async (newData) => {
                 try {
-                    await window.firebaseFirestore.setDoc(window.firebaseFirestore.doc(window.db, "falla", "globalData"), newData);
+                    const { setDoc, doc } = window.fb;
+                    await setDoc(doc(window.db, "falla", "globalData"), newData);
                 } catch (e) {
                     console.error("Error guardando:", e);
                 }
@@ -142,7 +145,12 @@
                 saveData({ falleros: newFalleros, contabilidadMensual, efectivo, tarjeta });
             };
 
-            if (loading) return <div className="loading-overlay"><i className="fas fa-circle-notch fa-spin text-4xl text-red-600"></i></div>;
+            if (loading) return (
+                <div className="loading-overlay">
+                    <i className="fas fa-circle-notch fa-spin text-4xl text-red-600 mb-4"></i>
+                    <p className="text-gray-500 animate-pulse">CONECTANDO A LA NUBE...</p>
+                </div>
+            );
 
             if (!role) {
                 return (
@@ -172,7 +180,7 @@
                                         <span className="bg-black/40 px-2 py-0.5 rounded">EF: {efectivo}€</span>
                                         <span className="bg-black/40 px-2 py-0.5 rounded">TJ: {tarjeta}€</span>
                                     </div>
-                                ) : <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Solo Lectura (Sincronizado)</span>}
+                                ) : <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Sincronizado con la nube</span>}
                             </div>
                             <div className="flex justify-between items-end border-t border-white/10 pt-3">
                                 <div>
@@ -270,18 +278,17 @@
                     )}
 
                     <footer className="mt-8 text-center text-[10px] text-gray-600 uppercase tracking-tighter pb-10">
-                        © 2026 Gestión Falla - Nitales - Cloud Sync Enabled
+                        © 2026 Gestión Falla - Nitales
                     </footer>
                 </div>
             );
         }
 
-        // Esperar a que Firebase cargue para renderizar React
-        const checkFirebase = setInterval(() => {
-            if (window.db) {
-                clearInterval(checkFirebase);
+        // Renderizado
+        const checkReady = setInterval(() => {
+            if (window.db && window.fb) {
+                clearInterval(checkReady);
                 const root = ReactDOM.createRoot(document.getElementById('root'));
-                window.firebaseFirestore = { doc, getDoc, setDoc, onSnapshot };
                 root.render(<App />);
             }
         }, 100);
