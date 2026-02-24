@@ -8,49 +8,38 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+      // 1. CONFIGURACIÓN DE FIREBASE (Sustituye esto con tus datos)
+        const firebaseConfig = {
+        apiKey: "AIzaSyCnZQCodEHPtQwZUsYLaxEzXesDBhoVrCM",
+        authDomain: "fallacuenta.firebaseapp.com",
+        projectId: "fallacuenta",
+        storageBucket: "fallacuenta.firebasestorage.app",
+        messagingSenderId: "1015231081604",
+        appId: "1:1015231081604:web:41905c3382df9d6f8a66d1",
+        measurementId: "GG-QEKBQ53F0B"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+      window.db = db; // Lo hacemos global para usarlo en React
+    </script>
+
     <style>
         body { background-color: #0f0f0f; color: #e5e7eb; font-family: ui-sans-serif, system-ui; -webkit-tap-highlight-color: transparent; }
         .card { background: #1a1a1a; border-radius: 12px; border: 1px solid #333; }
         .tab-active { border-bottom: 3px solid #ef4444; color: #ef4444; font-weight: bold; }
-        
-        /* Optimización de Checkboxes para móvil */
-        input[type="checkbox"] { 
-            width: 24px; height: 24px; 
-            accent-color: #22c55e; 
-            cursor: pointer;
-            border-radius: 6px;
-        }
-
+        input[type="checkbox"] { width: 24px; height: 24px; accent-color: #22c55e; cursor: pointer; border-radius: 6px; }
         .paid-bg { background-color: #064e3b !important; }
-        
-        /* Tabla responsive con scroll suave */
-        .table-container {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            border-radius: 8px;
-            scrollbar-width: none; /* Firefox */
-        }
-        .table-container::-webkit-scrollbar { display: none; } /* Chrome/Safari */
-
-        /* Columna de nombres fija */
-        .sticky-col {
-            position: sticky;
-            left: 0;
-            background: #1a1a1a;
-            z-index: 20;
-            border-right: 2px solid #333;
-            min-width: 100px;
-        }
-
-        /* Botones táctiles */
-        .touch-btn {
-            min-height: 44px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; scrollbar-width: none; }
+        .sticky-col { position: sticky; left: 0; background: #1a1a1a; z-index: 20; border-right: 2px solid #333; min-width: 100px; }
+        .touch-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; }
     </style>
 </head>
 <body>
@@ -58,42 +47,70 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+        const { doc, getDoc, setDoc, onSnapshot } = window.firebaseFirestore || {}; 
 
         const MESES = ["Sep", "Oct", "Nov", "Dic", "Ene", "Feb", "Mar", "Abr", "May", "Jun"];
-        const NOMBRES_INICIALES = [
-            "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi", 
-            "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos", 
-            "Pere", "Hada", "Diana", "Lucia", "Sergio"
-        ];
-        
         const ADMIN_PASSWORD = "Admin123";
 
         function App() {
             const [role, setRole] = useState(() => sessionStorage.getItem('falla_role') || null);
             const [passInput, setPassInput] = useState("");
             const [view, setView] = useState('cuotas');
+            const [loading, setLoading] = useState(true);
             
-            const [falleros, setFalleros] = useState(() => {
-                const saved = localStorage.getItem('falla_v2_falleros');
-                return saved ? JSON.parse(saved) : NOMBRES_INICIALES.map((n, i) => ({
-                    id: i, nombre: n, pagos: Array(10).fill(false)
-                }));
-            });
+            // Estados de datos
+            const [falleros, setFalleros] = useState([]);
+            const [contabilidadMensual, setContabilidadMensual] = useState([]);
+            const [efectivo, setEfectivo] = useState(0);
+            const [tarjeta, setTarjeta] = useState(0);
 
-            const [contabilidadMensual, setContabilidadMensual] = useState(() => {
-                const saved = localStorage.getItem('falla_v2_conta');
-                return saved ? JSON.parse(saved) : MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
-            });
-
-            const [efectivo, setEfectivo] = useState(() => Number(localStorage.getItem('falla_v2_efectivo')) || 196.06);
-            const [tarjeta, setTarjeta] = useState(() => Number(localStorage.getItem('falla_v2_tarjeta')) || 0.21);
-
+            // 2. ESCUCHAR CAMBIOS EN TIEMPO REAL DESDE LA NUBE
             useEffect(() => {
-                localStorage.setItem('falla_v2_falleros', JSON.stringify(falleros));
-                localStorage.setItem('falla_v2_conta', JSON.stringify(contabilidadMensual));
-                localStorage.setItem('falla_v2_efectivo', efectivo);
-                localStorage.setItem('falla_v2_tarjeta', tarjeta);
-            }, [falleros, contabilidadMensual, efectivo, tarjeta]);
+                if (!window.db) return;
+
+                const unsub = onSnapshot(window.firebaseFirestore.doc(window.db, "falla", "globalData"), (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setFalleros(data.falleros);
+                        setContabilidadMensual(data.contabilidadMensual);
+                        setEfectivo(data.efectivo);
+                        setTarjeta(data.tarjeta);
+                    } else {
+                        // Datos iniciales si la DB está vacía
+                        console.log("Inicializando base de datos...");
+                        initDatabase();
+                    }
+                    setLoading(false);
+                });
+
+                return () => unsub();
+            }, []);
+
+            const initDatabase = async () => {
+                const initialFalleros = [
+                    "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi", 
+                    "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos", 
+                    "Pere", "Hada", "Diana", "Lucia", "Sergio"
+                ].map((n, i) => ({ id: i, nombre: n, pagos: Array(10).fill(false) }));
+
+                const initialConta = MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
+
+                await saveData({
+                    falleros: initialFalleros,
+                    contabilidadMensual: initialConta,
+                    efectivo: 196.06,
+                    tarjeta: 0.21
+                });
+            };
+
+            // 3. FUNCIÓN PARA GUARDAR EN LA NUBE
+            const saveData = async (newData) => {
+                try {
+                    await window.firebaseFirestore.setDoc(window.firebaseFirestore.doc(window.db, "falla", "globalData"), newData);
+                } catch (e) {
+                    console.error("Error guardando:", e);
+                }
+            };
 
             const getCuota = (mesNombre) => (mesNombre === "Feb" ? 10 : 5);
 
@@ -110,27 +127,22 @@
                     if (passInput === ADMIN_PASSWORD) {
                         setRole('admin');
                         sessionStorage.setItem('falla_role', 'admin');
-                    } else {
-                        alert("Contraseña incorrecta");
-                    }
+                    } else { alert("Contraseña incorrecta"); }
                 } else {
                     setRole('user');
                     sessionStorage.setItem('falla_role', 'user');
                 }
             };
 
-            const handleLogout = () => {
-                setRole(null);
-                sessionStorage.removeItem('falla_role');
-                setPassInput("");
-            };
-
             const handleTogglePago = (fId, mIdx) => {
                 if (role !== 'admin') return;
-                setFalleros(falleros.map(f => f.id === fId ? 
+                const newFalleros = falleros.map(f => f.id === fId ? 
                     {...f, pagos: f.pagos.map((p, i) => i === mIdx ? !p : p)} : f
-                ));
+                );
+                saveData({ falleros: newFalleros, contabilidadMensual, efectivo, tarjeta });
             };
+
+            if (loading) return <div className="loading-overlay"><i className="fas fa-circle-notch fa-spin text-4xl text-red-600"></i></div>;
 
             if (!role) {
                 return (
@@ -138,22 +150,10 @@
                         <div className="card p-6 w-full max-w-md text-center shadow-2xl border-red-900">
                             <i className="fas fa-fire-alt text-5xl text-red-600 mb-4"></i>
                             <h2 className="text-xl font-bold mb-6 uppercase tracking-widest">Falla 2026</h2>
-                            
-                            <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">
-                                ENTRAR CONSULTA
-                            </button>
-                            
+                            <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">ENTRAR CONSULTA</button>
                             <div className="mt-4 pt-6 border-t border-neutral-800">
-                                <input 
-                                    type="password" 
-                                    placeholder="Pin Admin"
-                                    className="w-full bg-black border border-neutral-700 p-3 rounded-xl mb-3 text-center outline-none focus:border-red-600"
-                                    value={passInput}
-                                    onChange={(e) => setPassInput(e.target.value)}
-                                />
-                                <button onClick={() => handleLogin('admin')} className="w-full bg-red-700 touch-btn rounded-xl font-bold uppercase text-sm">
-                                    ADMINISTRADOR
-                                </button>
+                                <input type="password" placeholder="Pin Admin" className="w-full bg-black border border-neutral-700 p-3 rounded-xl mb-3 text-center outline-none focus:border-red-600" value={passInput} onChange={(e) => setPassInput(e.target.value)} />
+                                <button onClick={() => handleLogin('admin')} className="w-full bg-red-700 touch-btn rounded-xl font-bold uppercase text-sm">ADMINISTRADOR</button>
                             </div>
                         </div>
                     </div>
@@ -162,12 +162,8 @@
 
             return (
                 <div className="max-w-6xl mx-auto p-3 sm:p-6">
-                    {/* Header Adaptable */}
                     <header className="mb-4 bg-gradient-to-br from-red-900 to-black p-5 rounded-2xl border border-red-800 relative">
-                        <button onClick={handleLogout} className="absolute top-3 right-3 text-gray-400 text-sm p-2">
-                            <i className="fas fa-sign-out-alt"></i>
-                        </button>
-                        
+                        <button onClick={() => {setRole(null); sessionStorage.removeItem('falla_role');}} className="absolute top-3 right-3 text-gray-400 text-sm p-2"><i className="fas fa-sign-out-alt"></i></button>
                         <div className="flex flex-col gap-4">
                             <div>
                                 <h1 className="text-xl font-black uppercase">Falla 2026</h1>
@@ -176,27 +172,18 @@
                                         <span className="bg-black/40 px-2 py-0.5 rounded">EF: {efectivo}€</span>
                                         <span className="bg-black/40 px-2 py-0.5 rounded">TJ: {tarjeta}€</span>
                                     </div>
-                                ) : (
-                                    <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Solo Lectura</span>
-                                )}
+                                ) : <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Solo Lectura (Sincronizado)</span>}
                             </div>
-
                             <div className="flex justify-between items-end border-t border-white/10 pt-3">
                                 <div>
                                     <p className="text-[10px] text-gray-400 uppercase font-bold">Saldo en Caja</p>
                                     <span className="text-3xl font-mono font-bold">{role === 'admin' ? `${saldoTotal.toFixed(2)}€` : '***€'}</span>
                                 </div>
-                                {role === 'admin' && (
-                                    <button onClick={() => {}} className="bg-green-700 px-3 py-1.5 rounded-lg text-[10px] font-bold">
-                                        EXCEL
-                                    </button>
-                                )}
                             </div>
                         </div>
                     </header>
 
-                    {/* Nav deslizable en móvil */}
-                    <nav className="flex gap-4 mb-4 overflow-x-auto pb-2 border-b border-neutral-800 no-scrollbar">
+                    <nav className="flex gap-4 mb-4 overflow-x-auto pb-2 border-b border-neutral-800">
                         <button onClick={() => setView('cuotas')} className={`whitespace-nowrap pb-2 text-sm ${view === 'cuotas' ? 'tab-active' : 'text-gray-500'}`}>PAGOS</button>
                         {role === 'admin' && (
                             <>
@@ -206,18 +193,13 @@
                         )}
                     </nav>
 
-                    {/* Tabla Optimizada */}
                     {view === 'cuotas' && (
                         <div className="card table-container">
                             <table className="w-full text-xs text-left">
                                 <thead className="bg-neutral-800">
                                     <tr>
                                         <th className="p-3 sticky-col">Nombre</th>
-                                        {MESES.map(m => (
-                                            <th key={m} className="p-3 text-center border-l border-neutral-700">
-                                                {m}<br/><span className="text-[8px] text-yellow-500">{getCuota(m)}€</span>
-                                            </th>
-                                        ))}
+                                        {MESES.map(m => <th key={m} className="p-3 text-center border-l border-neutral-700">{m}<br/><span className="text-[8px] text-yellow-500">{getCuota(m)}€</span></th>)}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -226,12 +208,7 @@
                                             <td className="p-3 font-bold sticky-col">{f.nombre}</td>
                                             {f.pagos.map((p, i) => (
                                                 <td key={i} className={`p-3 text-center border-l border-neutral-800 transition-colors ${p ? 'paid-bg' : ''}`}>
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={p} 
-                                                        onChange={() => handleTogglePago(f.id, i)} 
-                                                        disabled={role !== 'admin'}
-                                                    />
+                                                    <input type="checkbox" checked={p} onChange={() => handleTogglePago(f.id, i)} disabled={role !== 'admin'} />
                                                 </td>
                                             ))}
                                         </tr>
@@ -241,7 +218,6 @@
                         </div>
                     )}
 
-                    {/* Vistas Admin adaptadas */}
                     {view === 'meses' && role === 'admin' && (
                         <div className="space-y-3">
                             {contabilidadMensual.map((m, idx) => (
@@ -251,11 +227,19 @@
                                         <div className="grid grid-cols-2 gap-2 mt-2">
                                             <div className="bg-black/30 p-2 rounded-lg">
                                                 <span className="block text-[8px] text-gray-500">INGRESOS</span>
-                                                <input type="number" value={m.ingresoExtra} onChange={(e) => setContabilidadMensual(contabilidadMensual.map((item, i) => i === idx ? {...item, ingresoExtra: Number(e.target.value)} : item))} className="bg-transparent w-full font-mono text-green-500 text-sm outline-none" />
+                                                <input type="number" value={m.ingresoExtra} 
+                                                    onChange={(e) => {
+                                                        const newConta = contabilidadMensual.map((item, i) => i === idx ? {...item, ingresoExtra: Number(e.target.value)} : item);
+                                                        saveData({falleros, contabilidadMensual: newConta, efectivo, tarjeta});
+                                                    }} className="bg-transparent w-full font-mono text-green-500 text-sm outline-none" />
                                             </div>
                                             <div className="bg-black/30 p-2 rounded-lg">
                                                 <span className="block text-[8px] text-gray-500">GASTOS</span>
-                                                <input type="number" value={m.gasto} onChange={(e) => setContabilidadMensual(contabilidadMensual.map((item, i) => i === idx ? {...item, gasto: Number(e.target.value)} : item))} className="bg-transparent w-full font-mono text-red-400 text-sm outline-none" />
+                                                <input type="number" value={m.gasto} 
+                                                    onChange={(e) => {
+                                                        const newConta = contabilidadMensual.map((item, i) => i === idx ? {...item, gasto: Number(e.target.value)} : item);
+                                                        saveData({falleros, contabilidadMensual: newConta, efectivo, tarjeta});
+                                                    }} className="bg-transparent w-full font-mono text-red-400 text-sm outline-none" />
                                             </div>
                                         </div>
                                     </div>
@@ -275,28 +259,32 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-[10px] text-gray-500 uppercase block mb-1">Efectivo inicial</label>
-                                    <input type="number" value={efectivo} onChange={(e) => setEfectivo(Number(e.target.value))} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                    <input type="number" value={efectivo} onChange={(e) => saveData({falleros, contabilidadMensual, efectivo: Number(e.target.value), tarjeta})} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-gray-500 uppercase block mb-1">Tarjeta inicial</label>
-                                    <input type="number" value={tarjeta} onChange={(e) => setTarjeta(Number(e.target.value))} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                    <input type="number" value={tarjeta} onChange={(e) => saveData({falleros, contabilidadMensual, efectivo, tarjeta: Number(e.target.value)})} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
                                 </div>
-                                <button onClick={() => { if(confirm('¿Resetear todo?')) { localStorage.clear(); location.reload(); } }} className="w-full bg-red-900/20 text-red-500 p-3 rounded-xl text-xs font-bold uppercase mt-4">
-                                    BORRAR TODOS LOS DATOS
-                                </button>
                             </div>
                         </div>
                     )}
 
                     <footer className="mt-8 text-center text-[10px] text-gray-600 uppercase tracking-tighter pb-10">
-                        © 2026 Gestión Falla - Nitales - Desarrollado por Álvaro Matas 
+                        © 2026 Gestión Falla - Nitales - Cloud Sync Enabled
                     </footer>
                 </div>
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Esperar a que Firebase cargue para renderizar React
+        const checkFirebase = setInterval(() => {
+            if (window.db) {
+                clearInterval(checkFirebase);
+                const root = ReactDOM.createRoot(document.getElementById('root'));
+                window.firebaseFirestore = { doc, getDoc, setDoc, onSnapshot };
+                root.render(<App />);
+            }
+        }, 100);
     </script>
 </body>
 </html>
