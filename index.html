@@ -6,30 +6,25 @@
     <title>Cuentas de la Falla - Nitales</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script> 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+    <!-- Firebase COMPAT (sin módulos ES6, compatible con Babel) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCnZQCodEHPtQwZUsYLaxEzXesDBhoVrCM",
             authDomain: "fallacuenta.firebaseapp.com",
             projectId: "fallacuenta",
             storageBucket: "fallacuenta.firebasestorage.app",
             messagingSenderId: "1015231081604",
-            appId: "1:1015231081604:web:41905c3382df9d6f8a66d1",
-            measurementId: "GG-QEKBQ53F0B"
+            appId: "1:1015231081604:web:41905c3382df9d6f8a66d1"
         };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // EXPORTAMOS TODO A WINDOW PARA QUE REACT LO VEA
-        window.db = db;
-        window.fb = { doc, getDoc, setDoc, onSnapshot };
+        firebase.initializeApp(firebaseConfig);
+        window.db = firebase.firestore();
     </script>
 
     <style>
@@ -47,6 +42,7 @@
 <body>
     <div id="root"></div>
 
+    <!-- data-presets="react" y data-plugins fuerzan la transformación clásica de JSX, sin import -->
     <script type="text/babel">
         const { useState, useEffect } = React;
 
@@ -58,20 +54,16 @@
             const [passInput, setPassInput] = useState("");
             const [view, setView] = useState('cuotas');
             const [loading, setLoading] = useState(true);
-            
+
             const [falleros, setFalleros] = useState([]);
             const [contabilidadMensual, setContabilidadMensual] = useState([]);
             const [efectivo, setEfectivo] = useState(0);
             const [tarjeta, setTarjeta] = useState(0);
 
             useEffect(() => {
-                if (!window.db || !window.fb) return;
-
-                // Usamos las funciones desde window.fb
-                const { onSnapshot, doc } = window.fb;
-                
-                const unsub = onSnapshot(doc(window.db, "falla", "globalData"), (docSnap) => {
-                    if (docSnap.exists()) {
+                const db = window.db;
+                const unsub = db.collection("falla").doc("globalData").onSnapshot((docSnap) => {
+                    if (docSnap.exists) {
                         const data = docSnap.data();
                         setFalleros(data.falleros || []);
                         setContabilidadMensual(data.contabilidadMensual || []);
@@ -85,14 +77,13 @@
                     console.error("Error en Firebase:", error);
                     alert("Error de permisos: Revisa las Reglas de Firestore");
                 });
-
                 return () => unsub();
             }, []);
 
             const initDatabase = async () => {
                 const initialFalleros = [
-                    "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi", 
-                    "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos", 
+                    "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi",
+                    "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos",
                     "Pere", "Hada", "Diana", "Lucia", "Sergio"
                 ].map((n, i) => ({ id: i, nombre: n, pagos: Array(10).fill(false) }));
 
@@ -108,8 +99,7 @@
 
             const saveData = async (newData) => {
                 try {
-                    const { setDoc, doc } = window.fb;
-                    await setDoc(doc(window.db, "falla", "globalData"), newData);
+                    await window.db.collection("falla").doc("globalData").set(newData);
                 } catch (e) {
                     console.error("Error guardando:", e);
                 }
@@ -123,14 +113,16 @@
 
             const totalGastos = contabilidadMensual.reduce((acc, m) => acc + m.gasto, 0);
             const totalIngresosExtra = contabilidadMensual.reduce((acc, m) => acc + m.ingresoExtra, 0);
-            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos;
+            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos + efectivo + tarjeta;
 
             const handleLogin = (selectedRole) => {
                 if (selectedRole === 'admin') {
                     if (passInput === ADMIN_PASSWORD) {
                         setRole('admin');
                         sessionStorage.setItem('falla_role', 'admin');
-                    } else { alert("Contraseña incorrecta"); }
+                    } else {
+                        alert("Contraseña incorrecta");
+                    }
                 } else {
                     setRole('user');
                     sessionStorage.setItem('falla_role', 'user');
@@ -139,8 +131,8 @@
 
             const handleTogglePago = (fId, mIdx) => {
                 if (role !== 'admin') return;
-                const newFalleros = falleros.map(f => f.id === fId ? 
-                    {...f, pagos: f.pagos.map((p, i) => i === mIdx ? !p : p)} : f
+                const newFalleros = falleros.map(f =>
+                    f.id === fId ? { ...f, pagos: f.pagos.map((p, i) => i === mIdx ? !p : p) } : f
                 );
                 saveData({ falleros: newFalleros, contabilidadMensual, efectivo, tarjeta });
             };
@@ -158,10 +150,21 @@
                         <div className="card p-6 w-full max-w-md text-center shadow-2xl border-red-900">
                             <i className="fas fa-fire-alt text-5xl text-red-600 mb-4"></i>
                             <h2 className="text-xl font-bold mb-6 uppercase tracking-widest">Falla 2026</h2>
-                            <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">ENTRAR CONSULTA</button>
+                            <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">
+                                ENTRAR CONSULTA
+                            </button>
                             <div className="mt-4 pt-6 border-t border-neutral-800">
-                                <input type="password" placeholder="Pin Admin" className="w-full bg-black border border-neutral-700 p-3 rounded-xl mb-3 text-center outline-none focus:border-red-600" value={passInput} onChange={(e) => setPassInput(e.target.value)} />
-                                <button onClick={() => handleLogin('admin')} className="w-full bg-red-700 touch-btn rounded-xl font-bold uppercase text-sm">ADMINISTRADOR</button>
+                                <input
+                                    type="password"
+                                    placeholder="Pin Admin"
+                                    className="w-full bg-black border border-neutral-700 p-3 rounded-xl mb-3 text-center outline-none focus:border-red-600"
+                                    value={passInput}
+                                    onChange={(e) => setPassInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleLogin('admin')}
+                                />
+                                <button onClick={() => handleLogin('admin')} className="w-full bg-red-700 touch-btn rounded-xl font-bold uppercase text-sm">
+                                    ADMINISTRADOR
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -171,7 +174,12 @@
             return (
                 <div className="max-w-6xl mx-auto p-3 sm:p-6">
                     <header className="mb-4 bg-gradient-to-br from-red-900 to-black p-5 rounded-2xl border border-red-800 relative">
-                        <button onClick={() => {setRole(null); sessionStorage.removeItem('falla_role');}} className="absolute top-3 right-3 text-gray-400 text-sm p-2"><i className="fas fa-sign-out-alt"></i></button>
+                        <button
+                            onClick={() => { setRole(null); sessionStorage.removeItem('falla_role'); }}
+                            className="absolute top-3 right-3 text-gray-400 text-sm p-2"
+                        >
+                            <i className="fas fa-sign-out-alt"></i>
+                        </button>
                         <div className="flex flex-col gap-4">
                             <div>
                                 <h1 className="text-xl font-black uppercase">Falla 2026</h1>
@@ -180,23 +188,42 @@
                                         <span className="bg-black/40 px-2 py-0.5 rounded">EF: {efectivo}€</span>
                                         <span className="bg-black/40 px-2 py-0.5 rounded">TJ: {tarjeta}€</span>
                                     </div>
-                                ) : <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Sincronizado con la nube</span>}
+                                ) : (
+                                    <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Sincronizado con la nube</span>
+                                )}
                             </div>
                             <div className="flex justify-between items-end border-t border-white/10 pt-3">
                                 <div>
                                     <p className="text-[10px] text-gray-400 uppercase font-bold">Saldo en Caja</p>
-                                    <span className="text-3xl font-mono font-bold">{role === 'admin' ? `${saldoTotal.toFixed(2)}€` : '***€'}</span>
+                                    <span className="text-3xl font-mono font-bold">
+                                        {role === 'admin' ? `${saldoTotal.toFixed(2)}€` : '***€'}
+                                    </span>
                                 </div>
                             </div>
                         </div>
                     </header>
 
                     <nav className="flex gap-4 mb-4 overflow-x-auto pb-2 border-b border-neutral-800">
-                        <button onClick={() => setView('cuotas')} className={`whitespace-nowrap pb-2 text-sm ${view === 'cuotas' ? 'tab-active' : 'text-gray-500'}`}>PAGOS</button>
+                        <button
+                            onClick={() => setView('cuotas')}
+                            className={`whitespace-nowrap pb-2 text-sm ${view === 'cuotas' ? 'tab-active' : 'text-gray-500'}`}
+                        >
+                            PAGOS
+                        </button>
                         {role === 'admin' && (
                             <>
-                                <button onClick={() => setView('meses')} className={`whitespace-nowrap pb-2 text-sm ${view === 'meses' ? 'tab-active' : 'text-gray-500'}`}>CONTABILIDAD</button>
-                                <button onClick={() => setView('config')} className={`pb-2 text-sm ${view === 'config' ? 'tab-active' : 'text-gray-500'}`}><i className="fas fa-cog"></i></button>
+                                <button
+                                    onClick={() => setView('meses')}
+                                    className={`whitespace-nowrap pb-2 text-sm ${view === 'meses' ? 'tab-active' : 'text-gray-500'}`}
+                                >
+                                    CONTABILIDAD
+                                </button>
+                                <button
+                                    onClick={() => setView('config')}
+                                    className={`pb-2 text-sm ${view === 'config' ? 'tab-active' : 'text-gray-500'}`}
+                                >
+                                    <i className="fas fa-cog"></i>
+                                </button>
                             </>
                         )}
                     </nav>
@@ -207,7 +234,12 @@
                                 <thead className="bg-neutral-800">
                                     <tr>
                                         <th className="p-3 sticky-col">Nombre</th>
-                                        {MESES.map(m => <th key={m} className="p-3 text-center border-l border-neutral-700">{m}<br/><span className="text-[8px] text-yellow-500">{getCuota(m)}€</span></th>)}
+                                        {MESES.map(m => (
+                                            <th key={m} className="p-3 text-center border-l border-neutral-700">
+                                                {m}<br />
+                                                <span className="text-[8px] text-yellow-500">{getCuota(m)}€</span>
+                                            </th>
+                                        ))}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -216,7 +248,12 @@
                                             <td className="p-3 font-bold sticky-col">{f.nombre}</td>
                                             {f.pagos.map((p, i) => (
                                                 <td key={i} className={`p-3 text-center border-l border-neutral-800 transition-colors ${p ? 'paid-bg' : ''}`}>
-                                                    <input type="checkbox" checked={p} onChange={() => handleTogglePago(f.id, i)} disabled={role !== 'admin'} />
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={p}
+                                                        onChange={() => handleTogglePago(f.id, i)}
+                                                        disabled={role !== 'admin'}
+                                                    />
                                                 </td>
                                             ))}
                                         </tr>
@@ -235,24 +272,36 @@
                                         <div className="grid grid-cols-2 gap-2 mt-2">
                                             <div className="bg-black/30 p-2 rounded-lg">
                                                 <span className="block text-[8px] text-gray-500">INGRESOS</span>
-                                                <input type="number" value={m.ingresoExtra} 
+                                                <input
+                                                    type="number"
+                                                    value={m.ingresoExtra}
                                                     onChange={(e) => {
-                                                        const newConta = contabilidadMensual.map((item, i) => i === idx ? {...item, ingresoExtra: Number(e.target.value)} : item);
-                                                        saveData({falleros, contabilidadMensual: newConta, efectivo, tarjeta});
-                                                    }} className="bg-transparent w-full font-mono text-green-500 text-sm outline-none" />
+                                                        const newConta = contabilidadMensual.map((item, i) =>
+                                                            i === idx ? { ...item, ingresoExtra: Number(e.target.value) } : item
+                                                        );
+                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta });
+                                                    }}
+                                                    className="bg-transparent w-full font-mono text-green-500 text-sm outline-none"
+                                                />
                                             </div>
                                             <div className="bg-black/30 p-2 rounded-lg">
                                                 <span className="block text-[8px] text-gray-500">GASTOS</span>
-                                                <input type="number" value={m.gasto} 
+                                                <input
+                                                    type="number"
+                                                    value={m.gasto}
                                                     onChange={(e) => {
-                                                        const newConta = contabilidadMensual.map((item, i) => i === idx ? {...item, gasto: Number(e.target.value)} : item);
-                                                        saveData({falleros, contabilidadMensual: newConta, efectivo, tarjeta});
-                                                    }} className="bg-transparent w-full font-mono text-red-400 text-sm outline-none" />
+                                                        const newConta = contabilidadMensual.map((item, i) =>
+                                                            i === idx ? { ...item, gasto: Number(e.target.value) } : item
+                                                        );
+                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta });
+                                                    }}
+                                                    className="bg-transparent w-full font-mono text-red-400 text-sm outline-none"
+                                                />
                                             </div>
                                         </div>
                                     </div>
                                     <div className="ml-4 text-right">
-                                        <span className={`text-sm font-mono font-bold ${ (m.ingresoExtra - m.gasto) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                        <span className={`text-sm font-mono font-bold ${(m.ingresoExtra - m.gasto) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                             {(m.ingresoExtra - m.gasto).toFixed(2)}€
                                         </span>
                                     </div>
@@ -267,11 +316,21 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-[10px] text-gray-500 uppercase block mb-1">Efectivo inicial</label>
-                                    <input type="number" value={efectivo} onChange={(e) => saveData({falleros, contabilidadMensual, efectivo: Number(e.target.value), tarjeta})} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                    <input
+                                        type="number"
+                                        value={efectivo}
+                                        onChange={(e) => saveData({ falleros, contabilidadMensual, efectivo: Number(e.target.value), tarjeta })}
+                                        className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono"
+                                    />
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-gray-500 uppercase block mb-1">Tarjeta inicial</label>
-                                    <input type="number" value={tarjeta} onChange={(e) => saveData({falleros, contabilidadMensual, efectivo, tarjeta: Number(e.target.value)})} className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono" />
+                                    <input
+                                        type="number"
+                                        value={tarjeta}
+                                        onChange={(e) => saveData({ falleros, contabilidadMensual, efectivo, tarjeta: Number(e.target.value) })}
+                                        className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -284,14 +343,8 @@
             );
         }
 
-        // Renderizado
-        const checkReady = setInterval(() => {
-            if (window.db && window.fb) {
-                clearInterval(checkReady);
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(<App />);
-            }
-        }, 100);
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
