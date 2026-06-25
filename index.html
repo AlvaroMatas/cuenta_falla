@@ -9,27 +9,23 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+    <!-- Firebase COMPAT (UMD, sin módulos ES6) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCnZQCodEHPtQwZUsYLaxEzXesDBhoVrCM",
             authDomain: "fallacuenta.firebaseapp.com",
             projectId: "fallacuenta",
             storageBucket: "fallacuenta.firebasestorage.app",
             messagingSenderId: "1015231081604",
-            appId: "1:1015231081604:web:41905c3382df9d6f8a66d1",
-            measurementId: "GG-QEKBQ53F0B"
+            appId: "1:1015231081604:web:41905c3382df9d6f8a66d1"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // EXPORTAMOS TODO A WINDOW PARA QUE REACT LO VEA
-        window.db = db;
-        window.fb = { doc, getDoc, setDoc, onSnapshot };
+        firebase.initializeApp(firebaseConfig);
+        window.db = firebase.firestore();
     </script>
 
     <style>
@@ -65,13 +61,9 @@
             const [tarjeta, setTarjeta] = useState(0);
 
             useEffect(() => {
-                if (!window.db || !window.fb) return;
-
-                // Usamos las funciones desde window.fb
-                const { onSnapshot, doc } = window.fb;
-                
-                const unsub = onSnapshot(doc(window.db, "falla", "globalData"), (docSnap) => {
-                    if (docSnap.exists()) {
+                const db = window.db;
+                const unsub = db.collection("falla").doc("globalData").onSnapshot((docSnap) => {
+                    if (docSnap.exists) {
                         const data = docSnap.data();
                         setFalleros(data.falleros || []);
                         setContabilidadMensual(data.contabilidadMensual || []);
@@ -108,8 +100,7 @@
 
             const saveData = async (newData) => {
                 try {
-                    const { setDoc, doc } = window.fb;
-                    await setDoc(doc(window.db, "falla", "globalData"), newData);
+                    await window.db.collection("falla").doc("globalData").set(newData);
                 } catch (e) {
                     console.error("Error guardando:", e);
                 }
@@ -123,7 +114,7 @@
 
             const totalGastos = contabilidadMensual.reduce((acc, m) => acc + m.gasto, 0);
             const totalIngresosExtra = contabilidadMensual.reduce((acc, m) => acc + m.ingresoExtra, 0);
-            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos;
+            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos + efectivo + tarjeta;
 
             const handleLogin = (selectedRole) => {
                 if (selectedRole === 'admin') {
@@ -284,14 +275,8 @@
             );
         }
 
-        // Renderizado
-        const checkReady = setInterval(() => {
-            if (window.db && window.fb) {
-                clearInterval(checkReady);
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(<App />);
-            }
-        }, 100);
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
