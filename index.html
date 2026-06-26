@@ -6,11 +6,11 @@
     <title>Cuentas de la Falla - Nitales</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script> 
+    <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
-    <!-- Firebase COMPAT (sin módulos ES6, compatible con Babel) -->
+    <!-- Firebase COMPAT -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
@@ -37,83 +37,161 @@
         .sticky-col { position: sticky; left: 0; background: #1a1a1a; z-index: 20; border-right: 2px solid #333; min-width: 100px; }
         .touch-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; }
         .loading-overlay { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        .year-btn { transition: all 0.2s; }
+        .year-btn-active { background: #991b1b; border-color: #ef4444; }
+        .year-btn-inactive { background: #1c1c1c; border-color: #444; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- data-presets="react" y data-plugins fuerzan la transformación clásica de JSX, sin import -->
     <script type="text/babel">
         const { useState, useEffect } = React;
 
         const MESES = ["Sep", "Oct", "Nov", "Dic", "Ene", "Feb", "Mar", "Abr", "May", "Jun"];
         const ADMIN_PASSWORD = "Admin123";
 
+        // Falleros para cada año
+        const FALLEROS_2526 = [
+            "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi",
+            "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos",
+            "Pere", "Hada", "Diana", "Lucia", "Sergio", "Aidan"
+        ];
+
+        const FALLEROS_2627 = [
+            "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi",
+            "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos",
+            "Pere", "Hada", "Diana", "Lucia", "Sergio", "Aidan"
+        ];
+
+        const AÑOS = [
+            { id: "2526", label: "2025 / 2026", docId: "globalData" },
+            { id: "2627", label: "2026 / 2027", docId: "globalData2627" }
+        ];
+
         function App() {
             const [role, setRole] = useState(() => sessionStorage.getItem('falla_role') || null);
             const [passInput, setPassInput] = useState("");
             const [view, setView] = useState('cuotas');
             const [loading, setLoading] = useState(true);
+            const [añoActivo, setAñoActivo] = useState(() => sessionStorage.getItem('falla_año') || "2526");
 
-            const [falleros, setFalleros] = useState([]);
-            const [contabilidadMensual, setContabilidadMensual] = useState([]);
-            const [efectivo, setEfectivo] = useState(0);
-            const [tarjeta, setTarjeta] = useState(0);
+            // Datos año 2025/2026
+            const [falleros2526, setFalleros2526] = useState([]);
+            const [conta2526, setConta2526] = useState([]);
+            const [efectivo2526, setEfectivo2526] = useState(0);
+            const [tarjeta2526, setTarjeta2526] = useState(0);
 
+            // Datos año 2026/2027
+            const [falleros2627, setFalleros2627] = useState([]);
+            const [conta2627, setConta2627] = useState([]);
+            const [efectivo2627, setEfectivo2627] = useState(0);
+            const [tarjeta2627, setTarjeta2627] = useState(0);
+
+            // Suscripción año 2025/2026 — controla el loading principal
             useEffect(() => {
-                const db = window.db;
-                const unsub = db.collection("falla").doc("globalData").onSnapshot((docSnap) => {
-                    if (docSnap.exists) {
-                        const data = docSnap.data();
-                        setFalleros(data.falleros || []);
-                        setContabilidadMensual(data.contabilidadMensual || []);
-                        setEfectivo(data.efectivo || 0);
-                        setTarjeta(data.tarjeta || 0);
+                const unsub = window.db.collection("falla").doc("globalData").onSnapshot((snap) => {
+                    if (snap.exists) {
+                        const d = snap.data();
+                        let f = d.falleros || [];
+                        const tieneAidan = f.some(x => x.nombre === "Aidan");
+                        if (!tieneAidan) {
+                            const newId = f.length > 0 ? Math.max(...f.map(x => x.id)) + 1 : 20;
+                            f = [...f, { id: newId, nombre: "Aidan", pagos: Array(10).fill(false) }];
+                            window.db.collection("falla").doc("globalData").update({ falleros: f });
+                        }
+                        setFalleros2526(f);
+                        setConta2526(d.contabilidadMensual || MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 })));
+                        setEfectivo2526(d.efectivo || 0);
+                        setTarjeta2526(d.tarjeta || 0);
                     } else {
-                        initDatabase();
+                        // Doc no existe, inicializar
+                        const nombres = FALLEROS_2526;
+                        const initialFalleros = nombres.map((n, i) => ({ id: i, nombre: n, pagos: Array(10).fill(false) }));
+                        const initialConta = MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
+                        window.db.collection("falla").doc("globalData").set({
+                            falleros: initialFalleros,
+                            contabilidadMensual: initialConta,
+                            efectivo: 196.06,
+                            tarjeta: 0.21
+                        });
                     }
+                    setLoading(false); // ← La app carga en cuanto responde el año principal
+                }, (err) => {
+                    console.error("Error Firebase 2526:", err);
                     setLoading(false);
-                }, (error) => {
-                    console.error("Error en Firebase:", error);
                     alert("Error de permisos: Revisa las Reglas de Firestore");
                 });
                 return () => unsub();
             }, []);
 
-            const initDatabase = async () => {
-                const initialFalleros = [
-                    "Luis", "Iker", "Álvaro", "Adriana", "Leire", "Balma", "Martín", "Gabi",
-                    "Sofía", "Andrea", "Arianne", "Sabrina", "Álex", "Valeria", "Marcos",
-                    "Pere", "Hada", "Diana", "Lucia", "Sergio"
-                ].map((n, i) => ({ id: i, nombre: n, pagos: Array(10).fill(false) }));
+            // Suscripción año 2026/2027 — carga en segundo plano, no bloquea
+            useEffect(() => {
+                const initialFalleros2627 = FALLEROS_2627.map((n, i) => ({ id: i, nombre: n, pagos: Array(10).fill(false) }));
+                const initialConta2627 = MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
 
-                const initialConta = MESES.map(m => ({ mes: m, ingresoExtra: 0, gasto: 0 }));
-
-                await saveData({
-                    falleros: initialFalleros,
-                    contabilidadMensual: initialConta,
-                    efectivo: 196.06,
-                    tarjeta: 0.21
+                const unsub = window.db.collection("falla").doc("globalData2627").onSnapshot((snap) => {
+                    if (snap.exists) {
+                        const d = snap.data();
+                        setFalleros2627(d.falleros && d.falleros.length > 0 ? d.falleros : initialFalleros2627);
+                        setConta2627(d.contabilidadMensual && d.contabilidadMensual.length > 0 ? d.contabilidadMensual : initialConta2627);
+                        setEfectivo2627(d.efectivo || 0);
+                        setTarjeta2627(d.tarjeta || 0);
+                    } else {
+                        // Doc no existe: poblar estado inmediatamente para que la tabla no salga vacía
+                        setFalleros2627(initialFalleros2627);
+                        setConta2627(initialConta2627);
+                        setEfectivo2627(0);
+                        setTarjeta2627(0);
+                        // Crear el doc en Firebase en segundo plano
+                        window.db.collection("falla").doc("globalData2627").set({
+                            falleros: initialFalleros2627,
+                            contabilidadMensual: initialConta2627,
+                            efectivo: 0,
+                            tarjeta: 0
+                        }).catch(e => console.error("Error creando 2627:", e));
+                    }
+                }, (err) => {
+                    console.error("Error Firebase 2627:", err);
+                    // En caso de error también mostrar los datos por defecto
+                    setFalleros2627(initialFalleros2627);
+                    setConta2627(initialConta2627);
                 });
-            };
-
-            const saveData = async (newData) => {
-                try {
-                    await window.db.collection("falla").doc("globalData").set(newData);
-                } catch (e) {
-                    console.error("Error guardando:", e);
-                }
-            };
+                return () => unsub();
+            }, []);
 
             const getCuota = (mesNombre) => (mesNombre === "Feb" ? 10 : 5);
 
-            const totalCuotas = falleros.reduce((acc, f) => {
-                return acc + f.pagos.reduce((accP, pagado, idx) => accP + (pagado ? getCuota(MESES[idx]) : 0), 0);
-            }, 0);
+            // Getters para el año activo
+            const falleros = añoActivo === "2526" ? falleros2526 : falleros2627;
+            const contabilidadMensual = añoActivo === "2526" ? conta2526 : conta2627;
+            const efectivo = añoActivo === "2526" ? efectivo2526 : efectivo2627;
+            const tarjeta = añoActivo === "2526" ? tarjeta2526 : tarjeta2627;
 
-            const totalGastos = contabilidadMensual.reduce((acc, m) => acc + m.gasto, 0);
-            const totalIngresosExtra = contabilidadMensual.reduce((acc, m) => acc + m.ingresoExtra, 0);
-            const saldoTotal = totalCuotas + totalIngresosExtra - totalGastos + efectivo + tarjeta;
+            // Cálculos por año
+            const calcTotalCuotas = (f) => f.reduce((acc, fa) =>
+                acc + fa.pagos.reduce((a, p, i) => a + (p ? getCuota(MESES[i]) : 0), 0), 0);
+            const calcSaldo = (f, c, ef, tj) => {
+                const cuotas = calcTotalCuotas(f);
+                const extras = c.reduce((a, m) => a + m.ingresoExtra, 0);
+                const gastos = c.reduce((a, m) => a + m.gasto, 0);
+                return cuotas + extras - gastos + ef + tj;
+            };
+
+            const saldo2526 = calcSaldo(falleros2526, conta2526, efectivo2526, tarjeta2526);
+            const saldo2627 = calcSaldo(falleros2627, conta2627, efectivo2627, tarjeta2627);
+            const saldoGlobal = saldo2526 + saldo2627;
+            const saldoActivo = añoActivo === "2526" ? saldo2526 : saldo2627;
+
+            const saveData = async (newData, docIdOverride) => {
+                const docId = docIdOverride || (añoActivo === "2526" ? "globalData" : "globalData2627");
+                try {
+                    await window.db.collection("falla").doc(docId).set(newData);
+                } catch (e) {
+                    console.error("Error guardando:", e);
+                    alert("Error al guardar. Revisa la conexión.");
+                }
+            };
 
             const handleLogin = (selectedRole) => {
                 if (selectedRole === 'admin') {
@@ -131,10 +209,22 @@
 
             const handleTogglePago = (fId, mIdx) => {
                 if (role !== 'admin') return;
-                const newFalleros = falleros.map(f =>
+                // Capturar el año activo en el momento del click para evitar closures obsoletas
+                const docId = añoActivo === "2526" ? "globalData" : "globalData2627";
+                const ef = añoActivo === "2526" ? efectivo2526 : efectivo2627;
+                const tj = añoActivo === "2526" ? tarjeta2526 : tarjeta2627;
+                const conta = añoActivo === "2526" ? conta2526 : conta2627;
+                const fallerosActivos = añoActivo === "2526" ? falleros2526 : falleros2627;
+                const newFalleros = fallerosActivos.map(f =>
                     f.id === fId ? { ...f, pagos: f.pagos.map((p, i) => i === mIdx ? !p : p) } : f
                 );
-                saveData({ falleros: newFalleros, contabilidadMensual, efectivo, tarjeta });
+                saveData({ falleros: newFalleros, contabilidadMensual: conta, efectivo: ef, tarjeta: tj }, docId);
+            };
+
+            const cambiarAño = (id) => {
+                setAñoActivo(id);
+                sessionStorage.setItem('falla_año', id);
+                setView('cuotas');
             };
 
             if (loading) return (
@@ -146,10 +236,10 @@
 
             if (!role) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="min-h-screen flex items-center justify-content p-4" style={{alignItems:'center',justifyContent:'center'}}>
                         <div className="card p-6 w-full max-w-md text-center shadow-2xl border-red-900">
                             <i className="fas fa-fire-alt text-5xl text-red-600 mb-4"></i>
-                            <h2 className="text-xl font-bold mb-6 uppercase tracking-widest">Falla 2026</h2>
+                            <h2 className="text-xl font-bold mb-6 uppercase tracking-widest">Falla Nitales</h2>
                             <button onClick={() => handleLogin('user')} className="w-full bg-neutral-800 touch-btn rounded-xl mb-4 font-bold border border-neutral-700">
                                 ENTRAR CONSULTA
                             </button>
@@ -171,6 +261,8 @@
                 );
             }
 
+            const añoLabel = AÑOS.find(a => a.id === añoActivo)?.label || "";
+
             return (
                 <div className="max-w-6xl mx-auto p-3 sm:p-6">
                     <header className="mb-4 bg-gradient-to-br from-red-900 to-black p-5 rounded-2xl border border-red-800 relative">
@@ -180,9 +272,10 @@
                         >
                             <i className="fas fa-sign-out-alt"></i>
                         </button>
-                        <div className="flex flex-col gap-4">
+
+                        <div className="flex flex-col gap-3">
                             <div>
-                                <h1 className="text-xl font-black uppercase">Falla 2026</h1>
+                                <h1 className="text-xl font-black uppercase">Falla Nitales</h1>
                                 {role === 'admin' ? (
                                     <div className="flex gap-3 text-[10px] mt-1 text-gray-300 font-mono">
                                         <span className="bg-black/40 px-2 py-0.5 rounded">EF: {efectivo}€</span>
@@ -192,13 +285,35 @@
                                     <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Sincronizado con la nube</span>
                                 )}
                             </div>
+
+                            {/* Selector de año */}
+                            <div className="flex gap-2">
+                                {AÑOS.map(a => (
+                                    <button
+                                        key={a.id}
+                                        onClick={() => cambiarAño(a.id)}
+                                        className={`year-btn flex-1 text-xs font-bold py-2 px-3 rounded-lg border ${añoActivo === a.id ? 'year-btn-active' : 'year-btn-inactive'}`}
+                                    >
+                                        {a.label}
+                                    </button>
+                                ))}
+                            </div>
+
                             <div className="flex justify-between items-end border-t border-white/10 pt-3">
                                 <div>
-                                    <p className="text-[10px] text-gray-400 uppercase font-bold">Saldo en Caja</p>
-                                    <span className="text-3xl font-mono font-bold">
-                                        {role === 'admin' ? `${saldoTotal.toFixed(2)}€` : '***€'}
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold">Saldo {añoLabel}</p>
+                                    <span className="text-2xl font-mono font-bold">
+                                        {role === 'admin' ? `${saldoActivo.toFixed(2)}€` : '***€'}
                                     </span>
                                 </div>
+                                {role === 'admin' && (
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-yellow-400 uppercase font-bold">Total Global</p>
+                                        <span className="text-lg font-mono font-bold text-yellow-400">
+                                            {saldoGlobal.toFixed(2)}€
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </header>
@@ -276,10 +391,11 @@
                                                     type="number"
                                                     value={m.ingresoExtra}
                                                     onChange={(e) => {
+                                                        const docId = añoActivo === "2526" ? "globalData" : "globalData2627";
                                                         const newConta = contabilidadMensual.map((item, i) =>
                                                             i === idx ? { ...item, ingresoExtra: Number(e.target.value) } : item
                                                         );
-                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta });
+                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta }, docId);
                                                     }}
                                                     className="bg-transparent w-full font-mono text-green-500 text-sm outline-none"
                                                 />
@@ -290,10 +406,11 @@
                                                     type="number"
                                                     value={m.gasto}
                                                     onChange={(e) => {
+                                                        const docId = añoActivo === "2526" ? "globalData" : "globalData2627";
                                                         const newConta = contabilidadMensual.map((item, i) =>
                                                             i === idx ? { ...item, gasto: Number(e.target.value) } : item
                                                         );
-                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta });
+                                                        saveData({ falleros, contabilidadMensual: newConta, efectivo, tarjeta }, docId);
                                                     }}
                                                     className="bg-transparent w-full font-mono text-red-400 text-sm outline-none"
                                                 />
@@ -312,7 +429,7 @@
 
                     {view === 'config' && role === 'admin' && (
                         <div className="card p-5 space-y-6">
-                            <h3 className="text-sm font-bold border-b border-neutral-700 pb-2">AJUSTES INICIALES</h3>
+                            <h3 className="text-sm font-bold border-b border-neutral-700 pb-2">AJUSTES — {añoLabel}</h3>
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-[10px] text-gray-500 uppercase block mb-1">Efectivo inicial</label>
@@ -331,6 +448,25 @@
                                         onChange={(e) => saveData({ falleros, contabilidadMensual, efectivo, tarjeta: Number(e.target.value) })}
                                         className="w-full bg-black border border-neutral-700 p-3 rounded-xl font-mono"
                                     />
+                                </div>
+                            </div>
+
+                            {/* Resumen global de ambos años */}
+                            <div className="border-t border-neutral-700 pt-4">
+                                <h4 className="text-[10px] text-yellow-400 uppercase font-bold mb-3">Resumen Global</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-black/40 p-3 rounded-lg">
+                                        <p className="text-[9px] text-gray-500 mb-1">2025 / 2026</p>
+                                        <p className={`font-mono font-bold text-sm ${saldo2526 >= 0 ? 'text-green-500' : 'text-red-500'}`}>{saldo2526.toFixed(2)}€</p>
+                                    </div>
+                                    <div className="bg-black/40 p-3 rounded-lg">
+                                        <p className="text-[9px] text-gray-500 mb-1">2026 / 2027</p>
+                                        <p className={`font-mono font-bold text-sm ${saldo2627 >= 0 ? 'text-green-500' : 'text-red-500'}`}>{saldo2627.toFixed(2)}€</p>
+                                    </div>
+                                </div>
+                                <div className="bg-yellow-900/30 border border-yellow-700/40 p-3 rounded-lg mt-3">
+                                    <p className="text-[9px] text-yellow-400 mb-1">TOTAL GLOBAL</p>
+                                    <p className={`font-mono font-bold text-lg ${saldoGlobal >= 0 ? 'text-yellow-400' : 'text-red-500'}`}>{saldoGlobal.toFixed(2)}€</p>
                                 </div>
                             </div>
                         </div>
